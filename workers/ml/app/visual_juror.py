@@ -4,6 +4,7 @@ import numpy as np
 import torch
 import torchvision.transforms as T
 from PIL import Image
+from transformers import AutoImageProcessor, AutoModelForImageClassification
 from .config import get_settings
 from .media import sample_video_frames
 from .schemas import JurorFinding, MediaJob
@@ -22,21 +23,63 @@ def _load_torchscript_model(path: str):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = torch.jit.load(str(model_path), map_location=device)
     model.eval()
-    return model, device
+    return {"kind": "torchscript", "model": model, "device": device, "id": path}
+
+
+def _load_transformers_model(model_id: str):
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    local_only = not settings.allow_remote_model_downloads
+    processor = AutoImageProcessor.from_pretrained(model_id, local_files_only=local_only)
+    model = AutoModelForImageClassification.from_pretrained(model_id, local_files_only=local_only).to(device)
+    model.eval()
+    return {"kind": "transformers", "processor": processor, "model": model, "device": device, "id": model_id}
+
+
+def _load_visual_model(model_ref: str):
+    if Path(model_ref).exists():
+        return _load_torchscript_model(model_ref)
+    return _load_transformers_model(model_ref)
 
 
 def load_models():
     global _face_model, _general_model
     settings.require_production_models()
     if _face_model is None:
-        _face_model = _load_torchscript_model(settings.visual_face_model_path)
+        _face_model = _load_visual_model(settings.visual_face_model_path)
     if _general_model is None:
-        _general_model = _load_torchscript_model(settings.visual_general_model_path)
+        _general_model = _load_visual_model(settings.visual_general_model_path)
     return _face_model, _general_model
 
 
-def _predict(model_bundle, frames: list[np.ndarray]) -> list[float]:
-    model, device = model_bundle
+def _fake_probability_from_labels(logits: torch.Tensor, id2label: dict) -> float:
+    probs = torch.softmax(logits, dim=-1)[0]
+    fake_indices = [
+        int(idx)
+        for idx, label in id2label.items()
+        if any(token in label.lower() for token in ("fake", "deepfake", "ai", "generated", "synthetic"))
+        and "real" not in label.lower()
+        and "human" not in label.lower()
+    ]
+    if not fake_indices:
+        fake_indices = [int(torch.argmax(probs).item())]
+    return float(max(probs[idx].item() for idx in fake_indices))
+
+
+def _predict(model_bundle: dict, frames: list[np.ndarray]) -> list[float]:
+    model = model_bundle["model"]
+    device = model_bundle["device"]
+    if model_bundle["kind"] == "transformers":
+        processor = model_bundle["processor"]
+        scores: list[float] = []
+        with torch.no_grad():
+            for frame in frames:
+                image = Image.fromarray(frame)
+                inputs = processor(images=image, return_tensors="pt")
+                inputs = {key: value.to(device) for key, value in inputs.items()}
+                outputs = model(**inputs)
+                scores.append(_fake_probability_from_labels(outputs.logits, model.config.id2label))
+        return scores
+
     transform = T.Compose([
         T.Resize((224, 224)),
         T.ToTensor(),
@@ -93,4 +136,3 @@ def analyze_visual(job: MediaJob) -> JurorFinding:
             f"general:{settings.visual_general_model_path}",
         ],
     )
-

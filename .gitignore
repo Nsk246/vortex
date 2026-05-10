@@ -11,7 +11,9 @@ node_modules/
 dist/
 build/
 coverage/
-models/
+/models/*
+!/models/README.md
+!/models/.gitkeep
 *.sqlite
 *.db
 .DS_Store

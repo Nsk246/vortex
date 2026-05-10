@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     visual_model_license: str = "unreviewed"
     audio_model_id: str | None = None
     audio_model_license: str = "unreviewed"
+    allow_remote_model_downloads: bool = False
     max_video_frames: int = 96
     audio_window_seconds: int = 4
 
@@ -41,4 +42,3 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
-

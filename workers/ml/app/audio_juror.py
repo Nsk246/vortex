@@ -22,8 +22,9 @@ def load_model():
     settings.require_production_models()
     if _model is None:
         _device = "cuda" if torch.cuda.is_available() else "cpu"
-        _extractor = AutoFeatureExtractor.from_pretrained(settings.audio_model_id, local_files_only=True)
-        _model = AutoModelForAudioClassification.from_pretrained(settings.audio_model_id, local_files_only=True).to(_device)
+        local_only = not settings.allow_remote_model_downloads
+        _extractor = AutoFeatureExtractor.from_pretrained(settings.audio_model_id, local_files_only=local_only)
+        _model = AutoModelForAudioClassification.from_pretrained(settings.audio_model_id, local_files_only=local_only).to(_device)
         _model.eval()
     return _extractor, _model, _device
 
@@ -79,4 +80,3 @@ def analyze_audio(job: MediaJob) -> JurorFinding:
         rationale="Acoustic juror aggregated anti-spoofing probabilities across normalized speech windows.",
         model_versions=[f"audio:{settings.audio_model_id}"],
     )
-
