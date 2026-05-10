@@ -20,12 +20,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 
 
 @app.on_event("startup")
 def startup() -> None:
     create_tables()
-    Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 
 
 @app.middleware("http")
