@@ -10,6 +10,11 @@
     "web:dev": "npm --workspace apps/web run dev",
     "web:build": "npm --workspace apps/web run build",
     "web:lint": "npm --workspace apps/web run lint"
+  },
+  "overrides": {
+    "postcss": "8.5.14",
+    "next": {
+      "postcss": "8.5.14"
+    }
   }
 }
-

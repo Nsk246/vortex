@@ -59,3 +59,6 @@ VORTEX is intentionally configured to reject production runs without real detect
 
 Before hosted production use, every checkpoint must have its license recorded in `model_registry`. Non-commercial checkpoints may be used for local research and evaluation only.
 
+## Security Dependency Note
+
+The web app is pinned to a patched Next.js canary while the latest stable channel still bundles a vulnerable PostCSS version. Move back to the next stable Next.js release once it includes `postcss >= 8.5.10`.

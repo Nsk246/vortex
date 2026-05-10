@@ -16,6 +16,5 @@ ml:
 	cd workers/ml && celery -A app.celery_app.celery_app worker -Q ml --loglevel=INFO --concurrency=1
 
 test-python:
-	PYTHONPATH=workers/orchestrator python -m pytest workers/orchestrator/tests
-	PYTHONPATH=apps/api python -m pytest apps/api/tests
-
+	cd workers/orchestrator && python -m pytest
+	cd apps/api && python -m pytest
