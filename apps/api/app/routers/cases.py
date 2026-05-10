@@ -121,7 +121,11 @@ def run_case(case_id: str, user: User = Depends(get_current_user), db: Session =
     case.status = "queued"
     case.updated_at = datetime.utcnow()
     db.commit()
-    task = celery_app.send_task(settings.orchestrator_task_name, args=[case.id, user.org_id])
+    task = celery_app.send_task(
+        settings.orchestrator_task_name,
+        args=[case.id, user.org_id],
+        queue=settings.orchestrator_queue_name,
+    )
     return RunResponse(case_id=case.id, status="queued", task_id=task.id)
 
 
@@ -169,4 +173,3 @@ def get_case(case_id: str, user: User = Depends(get_current_user), db: Session =
         ],
         verdict=verdict,
     )
-

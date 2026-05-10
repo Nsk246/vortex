@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     s3_access_key_id: str | None = None
     s3_secret_access_key: str | None = None
     s3_region: str = "us-east-1"
+    s3_server_side_encryption: str | None = None
 
     free_monthly_analyses: int = 5
     free_max_file_mb: int = 150
@@ -27,6 +28,7 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:3000"
 
     orchestrator_task_name: str = "orchestrator.run_tribunal"
+    orchestrator_queue_name: str = "orchestration"
 
     def validate_production(self) -> None:
         missing = []

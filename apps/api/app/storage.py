@@ -18,13 +18,15 @@ def s3_client():
 
 
 def upload_bytes(key: str, body: bytes, content_type: str) -> None:
-    s3_client().put_object(
-        Bucket=settings.s3_bucket,
-        Key=key,
-        Body=body,
-        ContentType=content_type,
-        ServerSideEncryption="AES256",
-    )
+    params = {
+        "Bucket": settings.s3_bucket,
+        "Key": key,
+        "Body": body,
+        "ContentType": content_type,
+    }
+    if settings.s3_server_side_encryption:
+        params["ServerSideEncryption"] = settings.s3_server_side_encryption
+    s3_client().put_object(**params)
 
 
 def signed_get_url(key: str, expires_in: int = 900) -> str:
@@ -33,4 +35,3 @@ def signed_get_url(key: str, expires_in: int = 900) -> str:
         Params={"Bucket": settings.s3_bucket, "Key": key},
         ExpiresIn=expires_in,
     )
-

@@ -43,7 +43,7 @@ services:
       - minio
     entrypoint: >
       /bin/sh -c "
-      mc alias set local http://minio:9000 vortex vortex-password;
+      until mc alias set local http://minio:9000 vortex vortex-password; do sleep 2; done;
       mc mb -p local/vortex-media;
       exit 0;
       "

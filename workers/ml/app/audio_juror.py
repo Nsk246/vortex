@@ -4,7 +4,7 @@ import time
 import librosa
 import numpy as np
 import torch
-from transformers import AutoFeatureExtractor, AutoModelForAudioClassification
+from transformers import AutoFeatureExtractor, AutoModelForAudioClassification, Wav2Vec2FeatureExtractor
 from .config import get_settings
 from .media import extract_audio, load_audio_windows
 from .schemas import JurorFinding, MediaJob
@@ -23,7 +23,16 @@ def load_model():
     if _model is None:
         _device = "cuda" if torch.cuda.is_available() else "cpu"
         local_only = not settings.allow_remote_model_downloads
-        _extractor = AutoFeatureExtractor.from_pretrained(settings.audio_model_id, local_files_only=local_only)
+        try:
+            _extractor = AutoFeatureExtractor.from_pretrained(settings.audio_model_id, local_files_only=local_only)
+        except OSError:
+            _extractor = Wav2Vec2FeatureExtractor(
+                feature_size=1,
+                sampling_rate=16000,
+                padding_value=0.0,
+                do_normalize=True,
+                return_attention_mask=True,
+            )
         _model = AutoModelForAudioClassification.from_pretrained(settings.audio_model_id, local_files_only=local_only).to(_device)
         _model.eval()
     return _extractor, _model, _device

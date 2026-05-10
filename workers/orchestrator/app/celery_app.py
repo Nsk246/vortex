@@ -67,6 +67,23 @@ def _media_job(case_id: str, asset: MediaAsset) -> dict:
     }
 
 
+def _mark_failed(case_id: str, error: Exception) -> None:
+    with SessionLocal() as db:
+        case = db.scalar(select(Case).where(Case.id == case_id))
+        if case:
+            case.status = "failed"
+            case.updated_at = datetime.utcnow()
+        _audit(
+            db,
+            case_id,
+            "tribunal.failed",
+            "judge",
+            "Tribunal stopped after a juror runtime failure.",
+            {"error": str(error), "error_type": type(error).__name__},
+        )
+        db.commit()
+
+
 @celery_app.task(name="orchestrator.run_tribunal", bind=True)
 def run_tribunal(self, case_id: str, org_id: str) -> dict:
     with SessionLocal() as db:
@@ -86,9 +103,13 @@ def run_tribunal(self, case_id: str, org_id: str) -> dict:
     publish(case_id, "jurors.queued", "judge", "Visual and acoustic jurors assigned to ML worker queue.", {})
     visual_async = celery_app.send_task("ml.visual.analyze", args=[job])
     audio_async = celery_app.send_task("ml.audio.analyze", args=[job])
-    with allow_join_result():
-        visual = visual_async.get(timeout=settings.juror_timeout_seconds)
-        audio = audio_async.get(timeout=settings.juror_timeout_seconds)
+    try:
+        with allow_join_result():
+            visual = visual_async.get(timeout=settings.juror_timeout_seconds)
+            audio = audio_async.get(timeout=settings.juror_timeout_seconds)
+    except Exception as exc:
+        _mark_failed(case_id, exc)
+        raise
 
     with SessionLocal() as db:
         _upsert_juror(db, case_id, "visual", visual)
