@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import Link from "next/link";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createCase, uploadMedia } from "@/lib/api";
+import { createCase, getToken, uploadMedia } from "@/lib/api";
 import { UploadCloud } from "lucide-react";
 
 export function UploadCase() {
@@ -10,7 +11,13 @@ export function UploadCase() {
   const [title, setTitle] = useState("Election interview authenticity review");
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState("");
+  const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
+  const [hasToken, setHasToken] = useState(false);
+
+  useEffect(() => {
+    setHasToken(Boolean(getToken()));
+  }, []);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -20,12 +27,16 @@ export function UploadCase() {
     }
     setBusy(true);
     setError("");
+    setStatus("Creating tribunal case");
     try {
       const created = await createCase(title);
+      setStatus("Uploading evidence to secure object storage");
       await uploadMedia(created.id, file);
+      setStatus("Opening live tribunal room");
       router.push(`/cases/${created.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
+      setStatus("");
     } finally {
       setBusy(false);
     }
@@ -49,11 +60,16 @@ export function UploadCase() {
           <span className="mt-2 block text-sm text-slate-400">Free tier limits are enforced server-side.</span>
         </span>
       </label>
+      {!hasToken && (
+        <p className="mt-4 border border-mint/30 bg-mint/10 p-3 text-sm text-mint">
+          Create or enter a workspace before uploading. <Link className="font-semibold underline" href="/login">Open access</Link>
+        </p>
+      )}
+      {status && <p className="mt-4 border border-line bg-ink/70 p-3 text-sm text-slate-200">{status}</p>}
       {error && <p className="mt-4 border border-signal/40 bg-signal/10 p-3 text-sm text-red-100">{error}</p>}
       <button disabled={busy} className="mt-5 w-full bg-mint px-4 py-3 font-semibold text-ink disabled:opacity-50">
-        {busy ? "Uploading evidence" : "Create tribunal case"}
+        {busy ? status || "Uploading evidence" : "Create tribunal case"}
       </button>
     </form>
   );
 }
-

@@ -15,6 +15,8 @@ from app.storage import upload_bytes
 router = APIRouter(prefix="/api/v1/cases", tags=["cases"])
 settings = get_settings()
 celery_app = Celery("vortex_api", broker=settings.redis_url, backend=settings.redis_url)
+celery_app.conf.broker_connection_timeout = 5
+celery_app.conf.task_publish_retry = False
 
 ALLOWED_CONTENT_TYPES = {
     "video/mp4",
@@ -121,11 +123,17 @@ def run_case(case_id: str, user: User = Depends(get_current_user), db: Session =
     case.status = "queued"
     case.updated_at = datetime.utcnow()
     db.commit()
-    task = celery_app.send_task(
-        settings.orchestrator_task_name,
-        args=[case.id, user.org_id],
-        queue=settings.orchestrator_queue_name,
-    )
+    try:
+        task = celery_app.send_task(
+            settings.orchestrator_task_name,
+            args=[case.id, user.org_id],
+            queue=settings.orchestrator_queue_name,
+        )
+    except Exception as exc:
+        case.status = "uploaded"
+        case.updated_at = datetime.utcnow()
+        db.commit()
+        raise HTTPException(status_code=503, detail=f"Could not enqueue tribunal task: {exc}") from exc
     return RunResponse(case_id=case.id, status="queued", task_id=task.id)
 
 

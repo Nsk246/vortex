@@ -16,9 +16,27 @@ export default function LoginPage() {
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setError("");
+    if (!email.trim()) {
+      setError("Email is required.");
+      return;
+    }
+    if (password.length < 10) {
+      setError("Password must be at least 10 characters.");
+      return;
+    }
+    if (mode === "register") {
+      if (fullName.trim().length < 2) {
+        setError("Full name must be at least 2 characters.");
+        return;
+      }
+      if (organization.trim().length < 2) {
+        setError("Organization must be at least 2 characters.");
+        return;
+      }
+    }
     try {
-      if (mode === "login") await login(email, password);
-      else await register(email, password, fullName, organization);
+      if (mode === "login") await login(email.trim(), password);
+      else await register(email.trim(), password, fullName.trim(), organization.trim());
       router.push("/");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Authentication failed");
@@ -48,4 +66,3 @@ export default function LoginPage() {
     </main>
   );
 }
-

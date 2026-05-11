@@ -16,6 +16,7 @@ export function TribunalStream({ initialCase }: { initialCase: CaseDetail }) {
   const [caseData, setCaseData] = useState(initialCase);
   const [events, setEvents] = useState<AuditEvent[]>(initialCase.audit_events);
   const [isRunning, setIsRunning] = useState(false);
+  const [runError, setRunError] = useState("");
 
   useEffect(() => {
     const socket = new WebSocket(caseStreamUrl(initialCase.id));
@@ -26,9 +27,38 @@ export function TribunalStream({ initialCase }: { initialCase: CaseDetail }) {
         getCase(initialCase.id).then(setCaseData).catch(() => undefined);
         setIsRunning(false);
       }
+      if (event.event_type === "tribunal.failed") {
+        getCase(initialCase.id).then(setCaseData).catch(() => undefined);
+        setIsRunning(false);
+      }
     };
     return () => socket.close();
   }, [initialCase.id]);
+
+  useEffect(() => {
+    setCaseData(initialCase);
+    setEvents(initialCase.audit_events);
+  }, [initialCase]);
+
+  useEffect(() => {
+    if (!["queued", "processing"].includes(caseData.status)) return;
+    const refresh = async () => {
+      try {
+        const freshCase = await getCase(caseData.id);
+        setCaseData(freshCase);
+        setEvents(freshCase.audit_events);
+        if (["complete", "failed"].includes(freshCase.status)) {
+          setIsRunning(false);
+          setRunError("");
+        }
+      } catch {
+        // WebSocket remains the primary live path; polling is only a stale-state backup.
+      }
+    };
+    void refresh();
+    const interval = window.setInterval(refresh, 5000);
+    return () => window.clearInterval(interval);
+  }, [caseData.id, caseData.status]);
 
   const latestByActor = useMemo(() => {
     const map = new Map<string, AuditEvent>();
@@ -37,9 +67,29 @@ export function TribunalStream({ initialCase }: { initialCase: CaseDetail }) {
   }, [events]);
 
   async function start() {
+    if (isRunning || caseData.status === "complete" || caseData.status === "processing") return;
+    if (caseData.status === "queued" && events.length > 0) return;
     setIsRunning(true);
-    await runCase(caseData.id);
+    setRunError("");
+    setCaseData((current) => ({ ...current, status: "queued" }));
+    try {
+      await runCase(caseData.id);
+      setCaseData((current) => ({ ...current, status: "processing" }));
+    } catch (err) {
+      setIsRunning(false);
+      setRunError(err instanceof Error ? err.message : "Could not start tribunal");
+      getCase(caseData.id).then(setCaseData).catch(() => undefined);
+    }
   }
+
+  useEffect(() => {
+    if (caseData.status === "uploaded" && !isRunning && events.length === 0) {
+      void start();
+    }
+  }, [caseData.status, events.length, isRunning]);
+
+  const canRetryQueued = caseData.status === "queued" && events.length === 0;
+  const startDisabled = isRunning || caseData.status === "complete" || caseData.status === "processing" || (caseData.status === "queued" && !canRetryQueued);
 
   return (
     <div className="grid gap-5 xl:grid-cols-[360px_1fr_360px]">
@@ -51,12 +101,21 @@ export function TribunalStream({ initialCase }: { initialCase: CaseDetail }) {
           </div>
           <button
             onClick={start}
-            disabled={isRunning || caseData.status === "complete"}
+            disabled={startDisabled}
             className="border border-mint/40 bg-mint px-4 py-2 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-40"
           >
-            Start
+            {caseData.status === "complete"
+              ? "Complete"
+              : isRunning
+                ? "Starting"
+                : caseData.status === "processing"
+                  ? "Running"
+                  : canRetryQueued
+                    ? "Retry start"
+                    : "Start"}
           </button>
         </div>
+        {runError && <p className="mb-4 border border-signal/40 bg-signal/10 p-3 text-sm text-red-100">{runError}</p>}
         <div className="space-y-3">
           {jurors.map((juror) => {
             const event = latestByActor.get(juror.id);
@@ -125,4 +184,3 @@ export function TribunalStream({ initialCase }: { initialCase: CaseDetail }) {
     </div>
   );
 }
-
