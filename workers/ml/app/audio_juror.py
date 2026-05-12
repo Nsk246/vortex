@@ -70,7 +70,9 @@ def analyze_audio(job: MediaJob) -> JurorFinding:
     confidence = float(np.mean(scores))
     snr_proxy = float(np.mean(rms_values))
     clipping = float(np.mean(clipping_ratios))
-    weight = max(0.15, min(1.0, 0.8 + snr_proxy - (clipping * 2)))
+    coverage = min(len(windows) / 6, 1.0)
+    signal_quality = max(0.15, min(1.0, 0.8 + snr_proxy - (clipping * 2)))
+    weight = max(0.15, min(1.0, signal_quality * coverage))
     return JurorFinding(
         juror_name="acoustic",
         confidence=confidence,
@@ -80,6 +82,7 @@ def analyze_audio(job: MediaJob) -> JurorFinding:
             "sample_rate": sr,
             "rms_proxy": snr_proxy,
             "clipping_ratio": clipping,
+            "coverage": coverage,
             "latency_ms": round((time.perf_counter() - start) * 1000),
         },
         evidence=[

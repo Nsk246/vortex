@@ -165,19 +165,19 @@ def run_tribunal(self, case_id: str, org_id: str) -> dict:
             ],
             disagreement_threshold=settings.disagreement_threshold,
         )
-        db.add(
-            JudgeVerdict(
-                id=str(uuid.uuid4()),
-                case_id=case_id,
-                final_confidence=verdict.final_confidence,
-                label=verdict.label,
-                disagreement_score=verdict.disagreement_score,
-                reexamination_triggered=verdict.reexamination_triggered,
-                rationale=verdict.rationale,
-                weights=verdict.weights,
-                created_at=datetime.utcnow(),
-            )
+        existing_verdict = db.scalar(select(JudgeVerdict).where(JudgeVerdict.case_id == case_id))
+        verdict_record = existing_verdict or JudgeVerdict(
+            id=str(uuid.uuid4()),
+            case_id=case_id,
+            created_at=datetime.utcnow(),
         )
+        verdict_record.final_confidence = verdict.final_confidence
+        verdict_record.label = verdict.label
+        verdict_record.disagreement_score = verdict.disagreement_score
+        verdict_record.reexamination_triggered = verdict.reexamination_triggered
+        verdict_record.rationale = verdict.rationale
+        verdict_record.weights = verdict.weights
+        db.add(verdict_record)
         case = db.scalar(select(Case).where(Case.id == case_id))
         case.status = "complete"
         case.risk_score = verdict.final_confidence

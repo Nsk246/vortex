@@ -12,6 +12,11 @@ export function setToken(token: string) {
   window.localStorage.setItem("vortex_token", token);
 }
 
+export function clearToken() {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem("vortex_token");
+}
+
 type RequestOptions = RequestInit & {
   timeoutMs?: number;
   requireAuth?: boolean;
@@ -58,7 +63,12 @@ async function request<T>(path: string, init: RequestOptions = {}): Promise<T> {
   }
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: response.statusText }));
-    throw new Error(formatApiError(error, response.statusText || "Request failed"));
+    const message = formatApiError(error, response.statusText || "Request failed");
+    if (response.status === 401) {
+      clearToken();
+      throw new Error(message === "Invalid bearer token" ? "Session expired. Sign in again to continue." : message);
+    }
+    throw new Error(message);
   }
   return response.json() as Promise<T>;
 }

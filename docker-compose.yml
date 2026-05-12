@@ -97,6 +97,7 @@ services:
         condition: service_healthy
     volumes:
       - ./models:/models:ro
+      - huggingface-cache:/root/.cache/huggingface
 
   web:
     build:
@@ -112,3 +113,4 @@ services:
 volumes:
   postgres-data:
   minio-data:
+  huggingface-cache:

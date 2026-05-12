@@ -106,7 +106,15 @@ def analyze_visual(job: MediaJob) -> JurorFinding:
     face_scores = _predict(face_model, frames)
     general_scores = _predict(general_model, frames)
     combined = [(face * 0.6) + (general * 0.4) for face, general in zip(face_scores, general_scores)]
-    confidence = float(np.mean(combined))
+    top_count = max(1, min(8, len(combined) // 10 or 1))
+    top_scores = sorted(combined, reverse=True)[:top_count]
+    aggregate_mean = float(np.mean(combined))
+    aggregate_p90 = float(np.quantile(combined, 0.9))
+    aggregate_p95 = float(np.quantile(combined, 0.95))
+    face_p95 = float(np.quantile(face_scores, 0.95))
+    general_p95 = float(np.quantile(general_scores, 0.95))
+    top_mean = float(np.mean(top_scores))
+    confidence = float(max(aggregate_mean, aggregate_p90, aggregate_p95, top_mean * 0.95, face_p95 * 0.75, general_p95))
     variance = float(np.var(combined))
     visibility_weight = min(len(frames) / max(settings.max_video_frames, 1), 1.0)
     stability_penalty = min(variance * 0.5, 0.2)
@@ -119,6 +127,12 @@ def analyze_visual(job: MediaJob) -> JurorFinding:
         quality={
             "sampled_frames": len(frames),
             "score_variance": variance,
+            "aggregate_mean": aggregate_mean,
+            "aggregate_p90": aggregate_p90,
+            "aggregate_p95": aggregate_p95,
+            "top_frame_mean": top_mean,
+            "face_detector_p95": face_p95,
+            "general_detector_p95": general_p95,
             "latency_ms": round((time.perf_counter() - start) * 1000),
         },
         evidence=[
@@ -130,7 +144,7 @@ def analyze_visual(job: MediaJob) -> JurorFinding:
             }
             for idx in top_indices
         ],
-        rationale="Visual juror aggregated face-forgery and general synthetic-image detector scores across sampled frames.",
+        rationale="Visual juror preserved upper-percentile face-forgery and synthetic-image signals across sampled frames.",
         model_versions=[
             f"face:{settings.visual_face_model_path}",
             f"general:{settings.visual_general_model_path}",
