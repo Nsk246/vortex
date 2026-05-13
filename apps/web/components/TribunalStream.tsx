@@ -12,6 +12,159 @@ const jurors = [
   { id: "judge", label: "Judge", icon: Scale }
 ];
 
+type EvidencePayload = {
+  confidence?: number;
+  weight?: number;
+  quality?: Record<string, unknown>;
+  evidence?: Array<Record<string, unknown>>;
+  label?: string;
+  final_confidence?: number;
+  disagreement_score?: number;
+  weights?: Record<string, number>;
+};
+
+function asPayload(event?: AuditEvent): EvidencePayload {
+  return (event?.payload ?? {}) as EvidencePayload;
+}
+
+function asNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function percent(value: unknown) {
+  const number = asNumber(value);
+  return number === null ? "Pending" : `${Math.round(number * 100)}%`;
+}
+
+function fixed(value: unknown, digits = 2) {
+  const number = asNumber(value);
+  return number === null ? "Pending" : number.toFixed(digits);
+}
+
+function evidenceRows(payload: EvidencePayload) {
+  return Array.isArray(payload.evidence) ? payload.evidence : [];
+}
+
+function EvidenceCanvas({ caseData, latestByActor }: { caseData: CaseDetail; latestByActor: Map<string, AuditEvent> }) {
+  const visual = asPayload(latestByActor.get("visual"));
+  const acoustic = asPayload(latestByActor.get("acoustic"));
+  const context = asPayload(latestByActor.get("context"));
+  const judge = asPayload(latestByActor.get("judge"));
+  const visualRows = evidenceRows(visual);
+  const audioRows = evidenceRows(acoustic);
+  const sampledFrames = asNumber(visual.quality?.sampled_frames) ?? 96;
+  const frameScores = new Map<number, number>();
+  for (const row of visualRows) {
+    const index = asNumber(row.frame_index);
+    const score = asNumber(row.combined_score);
+    if (index !== null && score !== null) frameScores.set(index, score);
+  }
+  const heatCells = Array.from({ length: Math.min(Math.max(sampledFrames, 24), 96) }, (_, index) => {
+    const score = frameScores.get(index) ?? 0;
+    const opacity = score > 0 ? 0.2 + Math.min(score, 1) * 0.8 : 0.08;
+    return { index, score, opacity };
+  });
+  const verdictConfidence = judge.final_confidence ?? caseData.verdict?.final_confidence ?? caseData.risk_score;
+
+  return (
+    <div className="space-y-5">
+      <div className="grid gap-3 md:grid-cols-4">
+        <div className="border border-line bg-ink/50 p-3">
+          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Visual</p>
+          <p className="mt-2 text-2xl font-semibold text-mint">{percent(visual.confidence)}</p>
+          <p className="mt-1 text-xs text-slate-400">weight {fixed(visual.weight)}</p>
+        </div>
+        <div className="border border-line bg-ink/50 p-3">
+          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Acoustic</p>
+          <p className="mt-2 text-2xl font-semibold text-mint">{percent(acoustic.confidence)}</p>
+          <p className="mt-1 text-xs text-slate-400">weight {fixed(acoustic.weight)}</p>
+        </div>
+        <div className="border border-line bg-ink/50 p-3">
+          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Context</p>
+          <p className="mt-2 text-2xl font-semibold text-amber">{percent(context.confidence)}</p>
+          <p className="mt-1 text-xs text-slate-400">{context.quality?.provider_error ? "fallback" : "reasoning"}</p>
+        </div>
+        <div className="border border-line bg-ink/50 p-3">
+          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Judge</p>
+          <p className="mt-2 text-2xl font-semibold text-amber">{percent(verdictConfidence)}</p>
+          <p className="mt-1 text-xs text-slate-400">{caseData.verdict?.label?.replaceAll("_", " ") ?? caseData.status}</p>
+        </div>
+      </div>
+
+      <div className="border border-line bg-black/30 p-4">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-xs uppercase tracking-[0.2em] text-mint/70">Frame Heatmap</p>
+            <p className="mt-1 text-sm text-slate-400">{visualRows.length ? `${visualRows.length} high-signal frames surfaced` : "Waiting for visual juror output"}</p>
+          </div>
+          <span className="border border-line px-2 py-1 text-xs text-slate-400">{Math.round(sampledFrames)} sampled</span>
+        </div>
+        <div className="grid grid-cols-12 gap-1">
+          {heatCells.map((cell) => (
+            <div
+              key={cell.index}
+              className="aspect-square border border-line/60"
+              title={`Frame ${cell.index}: ${percent(cell.score)}`}
+              style={{ backgroundColor: cell.score > 0 ? `rgba(232,100,82,${cell.opacity})` : "rgba(126,230,184,0.08)" }}
+            />
+          ))}
+        </div>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+        <div className="border border-line bg-ink/40 p-4">
+          <p className="text-xs uppercase tracking-[0.2em] text-mint/70">Top Visual Evidence</p>
+          <div className="mt-4 space-y-3">
+            {visualRows.length === 0 && <p className="text-sm text-slate-400">No frame evidence has arrived yet.</p>}
+            {visualRows.map((row, index) => {
+              const frameIndex = asNumber(row.frame_index) ?? index;
+              const combined = asNumber(row.combined_score) ?? 0;
+              const face = asNumber(row.face_detector_score) ?? 0;
+              const general = asNumber(row.general_detector_score) ?? 0;
+              return (
+                <div key={`${frameIndex}-${index}`}>
+                  <div className="mb-1 flex items-center justify-between text-sm">
+                    <span className="text-slate-200">Frame {frameIndex}</span>
+                    <span className="text-amber">{percent(combined)}</span>
+                  </div>
+                  <div className="h-2 bg-black/40">
+                    <div className="h-2 bg-signal" style={{ width: `${Math.max(4, combined * 100)}%` }} />
+                  </div>
+                  <p className="mt-1 text-xs text-slate-500">face {percent(face)} · general {percent(general)}</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="border border-line bg-ink/40 p-4">
+          <p className="text-xs uppercase tracking-[0.2em] text-mint/70">Audio Windows</p>
+          <div className="mt-4 flex h-32 items-end gap-2 border-b border-line pb-2">
+            {(audioRows.length ? audioRows : Array.from({ length: 8 }, (_, index) => ({ window_index: index, fake_probability: 0 }))).map((row, index) => {
+              const score = asNumber(row.fake_probability) ?? 0;
+              const height = audioRows.length ? Math.max(8, score * 100) : 12 + index * 5;
+              return (
+                <div
+                  key={`${asNumber(row.window_index) ?? index}-${index}`}
+                  className={audioRows.length ? "w-full bg-amber" : "w-full bg-mint/20"}
+                  title={`Window ${asNumber(row.window_index) ?? index}: ${percent(score)}`}
+                  style={{ height: `${height}%`, opacity: audioRows.length ? 0.85 : 0.25 }}
+                />
+              );
+            })}
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-3 text-xs text-slate-400">
+            <span>windows {fixed(acoustic.quality?.window_count, 0)}</span>
+            <span>coverage {percent(acoustic.quality?.coverage)}</span>
+            <span>rms {fixed(acoustic.quality?.rms_proxy, 3)}</span>
+            <span>clip {percent(acoustic.quality?.clipping_ratio)}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function TribunalStream({ initialCase }: { initialCase: CaseDetail }) {
   const [caseData, setCaseData] = useState(initialCase);
   const [events, setEvents] = useState<AuditEvent[]>(initialCase.audit_events);
@@ -144,20 +297,7 @@ export function TribunalStream({ initialCase }: { initialCase: CaseDetail }) {
           </div>
           <span className="border border-line px-3 py-1 text-sm text-slate-300">{caseData.status}</span>
         </div>
-        <div className="grid h-[520px] place-items-center border border-line bg-black/30">
-          <div className="w-full max-w-2xl px-8">
-            <div className="mb-8 h-40 border border-mint/20 bg-[linear-gradient(135deg,rgba(126,230,184,.10),rgba(232,100,82,.08))]" />
-            <div className="space-y-2">
-              {Array.from({ length: 28 }).map((_, index) => (
-                <div
-                  key={index}
-                  className="h-2 bg-mint/20"
-                  style={{ width: `${30 + ((index * 17) % 64)}%`, opacity: 0.25 + ((index % 6) * 0.1) }}
-                />
-              ))}
-            </div>
-          </div>
-        </div>
+        <EvidenceCanvas caseData={caseData} latestByActor={latestByActor} />
       </section>
 
       <section className="court-panel p-5">
